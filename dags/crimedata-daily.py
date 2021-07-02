@@ -3,6 +3,7 @@ from airflow.models import Variable
 from airflow.decorators import dag, task
 from airflow.utils.dates import days_ago
 from airflow.providers.postgres.hooks.postgres import PostgresHook
+from airflow.operators.dummy_operator import DummyOperator
 
 from sqlalchemy import create_engine
 from datetime import datetime, timedelta
@@ -19,6 +20,8 @@ import os
 import logging
 from pandas import json_normalize
 
+# custom module
+from crimedata.fetch import CrimeData
 
 
 logging.basicConfig(format="%(name)s-%(levelname)s-%(asctime)s-%(message)s", level=logging.INFO)
@@ -45,6 +48,11 @@ default_args = {
 #### if we run @daily, from a 12am UTC perspective that's either 5pm in the spring or 4pm in the fall
 #### so curr_date, yesterday would be 20th and 19th respectively if 12am UTC is on the 21st for ex
 #### 
+
+###  start = DummyOperator(task_id="start", dag=dag)
+### start_operator = DummyOperator(task_id='Begin_execution',  dag=dag)
+### end_operator = DummyOperator(task_id='Stop_execution',  dag=dag)
+
  
  
 result = PostgresHook(postgres_conn_id='postgres_new').get_uri().split("/")
@@ -59,7 +67,15 @@ with DAG(dag_id="LOAD_DAILY_OAK_CRIMEDATA_PIPELINE", default_args=default_args,
     # @dag.task
     # def get_today_date() -> str:
     #     return datetime.now().strftime("%Y-%M-%D")
-        
+
+    # start = DummyOperator(task_id='start', dag=dag)  
+    #  end_operator = DummyOperator(task_id='stop', dag=dag)
+
+
+    # @dag.task
+    # def get_dates():
+
+
 
     @dag.task(default_args={"retries": "2", "retry_delay": timedelta(minutes=30)})
     def get_oak_crime_data_by_day():
@@ -70,39 +86,10 @@ with DAG(dag_id="LOAD_DAILY_OAK_CRIMEDATA_PIPELINE", default_args=default_args,
         date_qparam = f"datetime between '{yesterday}T00:00:00' and '{curr_date}T00:00:00'"
         log.info(date_qparam)
         secret_key = Variable.get("SOCRATA_APPTOKEN")
-        headers = {"X-App-Token": secret_key}
-        s = requests.Session()
-        s.headers.update(headers)
-        try:
-            #datetime between '2021-02-10T00:00:00' and '2021-02-10T23:59:59
-            #$where=date between '2015-01-10T12:00:00' and '2015-01-10T14:00:00'
-            #datetime=2021-02-02
-            #"crimetype": "STOLEN VEHICLE"
-            #"$where": "datetime between '2020-11-10T12:00:00' and '2021-01-10T14:00:00'"
-            # "$where": "datetime between '2021-02-10T12:00:00' and '2021-02-11T14:00:00'"
-            # "$where": "datetime > '2021-01-10'" 
-            # params = { "$limit": "10", "$offset": "0", "$order": ":id", "$where": date_qparam}
-            params = { "$order": ":id", "$where": date_qparam}
-            resp = s.get(OAK_DATA_API, timeout=10, params=params)
-            log.info("URL %s", resp.url)
-            resp.raise_for_status()
-        except HTTPError as http_err:
-            log.error(http_err)
-            # log.warning("Request failed with %s, request_id was %s with Err %s", resp.status_code, request_id, http_err)
-        except Exception as err:
-            # log.warning("Request failed with %s, request_id was %s", resp.status_code, request_id)
-            log.error(err)
-        else:
-            log.info("HTTP Headers %s", resp.headers)
-            # log.info("type %s",resp.headers["X-SODA2-Legacy-Types"])
-            if not resp.json():
-                raise ValueError("No Data fetched from API ", resp.content)
-            log.info("succesful http resp" )
-            data = resp.json()
-            log.info("Retrieved %d crime data rows", len(data))
-            log.info(data)
-            return data 
-  
+
+        data = CrimeData.get_data(app_token=secret_key, date_qparam=date_qparam)
+        return data 
+ 
  
     @dag.task
     def load_data_to_db(data):
@@ -115,3 +102,4 @@ with DAG(dag_id="LOAD_DAILY_OAK_CRIMEDATA_PIPELINE", default_args=default_args,
 
     
     load_data_to_db(get_oak_crime_data_by_day())
+    #t0 >> get_oak_crime_data_by_day >> load_data_to_db 

@@ -12,9 +12,8 @@ docker-compose up airflow-init
 docker-compose up 
 
 ## get container_id of airflow webserver
-docker ps
-get the container_id 
-
+```docker ps```
+get the container_id
 then do
 
 ## set value of api_key
@@ -48,3 +47,10 @@ docker logs [CONTAINER_ID]
 
 ### remove containers and volumes 
 docker-compose down --volumes --rmi all
+
+
+
+
+
+Data ingestion into psql
+then 
